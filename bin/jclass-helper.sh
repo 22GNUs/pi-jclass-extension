@@ -64,13 +64,10 @@ cmd_index() {
     -print0 2>/dev/null | \
     xargs -0 -P "$NPROC" -I{} sh -c '
       unzip -Z1 "$1" 2>/dev/null | \
-      grep "\.class$" | \
-      grep -v "[$]" | \
-      awk -v jar="$1" "{print \$0 \"\t\" jar}"
+      awk -v jar="$1" '\''/\.class$/ && !/[$]/ {print $0 "\t" jar}'\''
     ' _ {} > "$tmpfile"
 
-  sort "$tmpfile" > "$INDEX_FILE"
-  rm -f "$tmpfile"
+  mv "$tmpfile" "$INDEX_FILE"
   trap - EXIT
 
   local count; count=$(wc -l < "$INDEX_FILE" | tr -d ' ')

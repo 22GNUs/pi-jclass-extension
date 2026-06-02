@@ -106,6 +106,8 @@ Examples:
 ## Implementation notes
 
 - uses `unzip -Z1` instead of `jar tf` for much faster indexing
+- writes an unsorted index to avoid expensive full-index sorting; search does not require sorted rows
+- filters class entries in one `awk` pass per JAR to reduce process overhead
 - uses `rg` when available for fast searches
 - uses `javap -p` for API / decompiled inspection
 - prefers `*-sources.jar` when available
