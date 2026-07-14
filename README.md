@@ -22,9 +22,10 @@ This package builds a cached class index over `~/.m2/repository` and provides:
 
 ## Performance
 
-Typical numbers on a large local Maven cache:
+Typical behavior on a large local Maven cache:
 
-- first index build: ~30s (one-time)
+- first index build scans all dependency JARs
+- subsequent `index` runs only scan added or changed JARs
 - search: ~0.2s to ~0.3s
 - api/src lookup: ~0.5s
 
@@ -81,7 +82,7 @@ pi install -l git:github.com/22GNUs/pi-jclass-extension
 Parameters:
 - `action`: `index | search | api | src | jar`
 - `query`: class name or fully-qualified class name
-- `rebuild`: only for `action=index`
+- `rebuild`: only for `action=index`; bypasses incremental detection and scans every JAR
 
 ### Slash command
 
@@ -94,20 +95,25 @@ Examples:
 /jclass api com.example.domain.UserProfileDTO
 /jclass src com.example.domain.ContactPersonDTO
 /jclass jar com.example.domain.CompanyInfoDTO
-/jclass index --rebuild
+/jclass index             # fast incremental update
+/jclass index --rebuild   # force a full rebuild
 ```
 
 ## Cache location
 
 ```text
 ~/.pi/cache/jclass/index.tsv
+~/.pi/cache/jclass/manifest.json
 ```
+
+The manifest stores each JAR's path, modification time, and size for incremental updates.
 
 ## Implementation notes
 
-- uses `unzip -Z1` instead of `jar tf` for much faster indexing
+- reads ZIP central directories in one Python process instead of spawning `unzip` and `awk` for every JAR
+- incrementally rescans only added or changed JARs and removes records for deleted JARs
 - writes an unsorted index to avoid expensive full-index sorting; search does not require sorted rows
-- filters class entries in one `awk` pass per JAR to reduce process overhead
+- atomically replaces the index and manifest so interrupted updates keep the previous cache intact
 - uses `rg` when available for fast searches
 - uses `javap -p` for API / decompiled inspection
 - prefers `*-sources.jar` when available

@@ -12,11 +12,12 @@
 #
 set -euo pipefail
 
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 CACHE_DIR="${JCLASS_CACHE_DIR:-$HOME/.pi/cache/jclass}"
 INDEX_FILE="$CACHE_DIR/index.tsv"
 M2_REPO="${M2_REPO:-$HOME/.m2/repository}"
 MAX_RESULTS="${JCLASS_MAX_RESULTS:-30}"
-NPROC=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 8)
+NPROC="${JCLASS_WORKERS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 8)}"
 
 if command -v rg &>/dev/null; then
   do_grep() { rg -i --no-filename "$@"; }
@@ -44,35 +45,20 @@ cmd_index() {
   local force=false
   [[ "${1:-}" == "--rebuild" ]] && force=true
 
-  if [[ -f "$INDEX_FILE" && "$force" == false ]]; then
-    local count; count=$(wc -l < "$INDEX_FILE" | tr -d ' ')
-    echo "Index exists: $count classes"
-    return 0
-  fi
+  command -v python3 >/dev/null 2>&1 || {
+    echo "python3 is required to build the jclass index" >&2
+    return 1
+  }
 
-  mkdir -p "$CACHE_DIR"
-  echo "Building class index from $M2_REPO ..." >&2
-  echo "  JARs: $(find "$M2_REPO" -name '*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' 2>/dev/null | wc -l | tr -d ' ')" >&2
-  echo "  Workers: $NPROC" >&2
-
-  local tmpfile="$INDEX_FILE.tmp.$$"
-  trap 'rm -f "${tmpfile:-}"' EXIT
-
-  find "$M2_REPO" -name '*.jar' \
-    ! -name '*-sources.jar' \
-    ! -name '*-javadoc.jar' \
-    -print0 2>/dev/null | \
-    xargs -0 -P "$NPROC" -I{} sh -c '
-      unzip -Z1 "$1" 2>/dev/null | \
-      awk -v jar="$1" '\''/\.class$/ && !/[$]/ {print $0 "\t" jar}'\''
-    ' _ {} > "$tmpfile"
-
-  mv "$tmpfile" "$INDEX_FILE"
-  trap - EXIT
-
-  local count; count=$(wc -l < "$INDEX_FILE" | tr -d ' ')
-  echo "Done: indexed $count classes → $INDEX_FILE" >&2
-  echo "$count"
+  echo "$([[ "$force" == true ]] && echo Rebuilding || echo Updating) class index from $M2_REPO ..." >&2
+  local args=(
+    "$SCRIPT_DIR/jclass-index.py"
+    --repository "$M2_REPO"
+    --cache-dir "$CACHE_DIR"
+    --workers "$NPROC"
+  )
+  [[ "$force" == true ]] && args+=(--rebuild)
+  python3 "${args[@]}"
 }
 
 ensure_index() {
